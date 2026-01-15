@@ -1,0 +1,36 @@
+experiment_name: "sweep_angle_transition"
+template: "experiments/templates/base_two_ship.yaml"
+
+out_dir: "experiments/runs"
+
+# Simulator
+show_plots: false
+liveplot: false
+new_load_of_map_data_first_case: true
+
+# Evaluator (kan settes false hvis colav_evaluation_tool ikke er installert i samme venv)
+run_evaluator: true
+evaluator:
+  map_data_files: ["More_og_Romsdal_utm33.gdb"]
+  utm_zone: 33
+  new_map_data_load: false
+
+sweep_center_enu: [6946500.0, 42000.0]
+sweep_radius_m: 1200.0
+ship0_wp_length_m: 6000.0
+ship1_wp_length_m: 6000.0
+
+sweep:
+  ship1_angle_deg:
+    start: 0.0
+    stop: 90.0
+    step: 10.0
+
+
+visual_debug:
+  enabled: false
+  case_id: "0001"
+
+
+meta:
+  note: "Sweeping target heading to probe evaluator sensitivity."

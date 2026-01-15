@@ -144,3 +144,4 @@ todo.txt
 
 # Local generated artifacts
 *.csv
+experiments/runs/
