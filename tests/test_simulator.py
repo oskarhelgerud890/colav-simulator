@@ -4,6 +4,10 @@ Test module for the Simulator class.
 Shows how to use the simulator with a colav system.
 """
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import pickle
 from pathlib import Path
 from pprint import pformat
@@ -17,13 +21,30 @@ import colav_simulator.simulator as sim
 
 
 def test_simulator() -> None:
+
+    import colav_simulator
+    import colav_simulator.common.paths as dp
+
+    print("colav_simulator.__file__ =", colav_simulator.__file__)
+    print("dp.__file__              =", dp.__file__)
+    print("dp.scenario_generator_config =", dp.scenario_generator_config)
+
     sbmpc_obj = ci.SBMPCWrapper()
     scenario_generator = sg.ScenarioGenerator()
     scenario_data_list = scenario_generator.generate_configured_scenarios()
+    print("scenario_generator_config:", dp.scenario_generator_config)
+
+    print("Num scenarios generated:", len(scenario_data_list))
+    for i, sc in enumerate(scenario_data_list):
+        # prøv litt robust printing siden objekttypen kan variere
+        name = getattr(sc, "name", None)
+        cfg  = getattr(sc, "config_file", None)
+        print(f"  {i}: name={name} config_file={cfg} type={type(sc)}")
+
     simulator = sim.Simulator()
     simulator.toggle_liveplot_visibility(True)
     output = simulator.run(scenario_data_list, colav_systems=[(0, sbmpc_obj)])
-    print("Simulation output: ", pformat(output))
+    #print("Simulation output: ", pformat(output))
 
 
 @pytest.mark.skipif(
