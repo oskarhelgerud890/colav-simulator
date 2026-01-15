@@ -24,6 +24,7 @@ dependencies = [
     "decorator>=5.2.1",
     "geopandas>=1.1.1",
     "geopy>=2.4.1",
+    "gdal==3.8.4",
     "gymnasium>=0.28.1",
     "matplotlib>=3.10.7",
     "matplotlib-scalebar>=0.9.0",
