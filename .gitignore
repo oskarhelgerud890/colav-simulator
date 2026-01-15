@@ -141,3 +141,6 @@ todo.txt
 .vscode/
 /scenarios/saved/
 /data/ais/
+
+# Local generated artifacts
+*.csv
