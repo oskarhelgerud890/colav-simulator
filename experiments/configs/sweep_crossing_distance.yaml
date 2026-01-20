@@ -26,9 +26,9 @@ ship1_wp_length_m: 6000.0
 # Sweep: start-avstand øst for krysningspunktet (meter)
 sweep:
   ship1_start_east_m:
-    start: 2200.0
-    stop: 2200.0
-    step: -1.0
+    start: 1100.0
+    stop: 1400.0
+    step: 50.0
 
 visual_debug:
   enabled: false
