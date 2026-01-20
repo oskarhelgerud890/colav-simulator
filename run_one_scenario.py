@@ -150,7 +150,7 @@ def summarize_episode(ep0: dict) -> None:
 
 def main() -> None:
     # === Velg scenario her ===
-    scenario_file = Path("scenarios/head_on.yaml")
+    scenario_file = Path("scenarios/crossing_give_way.yaml")
     # scenario_file = Path("scenarios/crossing_give_way.yaml")
 
     # === Eksportmål (absolutt path, så du alltid finner fila) ===
