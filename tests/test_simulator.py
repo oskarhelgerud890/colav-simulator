@@ -18,6 +18,7 @@ import colav_simulator.common.paths as dp
 import colav_simulator.core.colav.colav_interface as ci
 import colav_simulator.scenario_generator as sg
 import colav_simulator.simulator as sim
+import matplotlib.pyplot as plt
 
 
 def test_simulator() -> None:
@@ -45,6 +46,7 @@ def test_simulator() -> None:
     simulator.toggle_liveplot_visibility(True)
     output = simulator.run(scenario_data_list, colav_systems=[(0, sbmpc_obj)])
     #print("Simulation output: ", pformat(output))
+    plt.show(block=True)
 
 
 @pytest.mark.skipif(
@@ -95,7 +97,7 @@ def test_simulator_data_output() -> None:
     print(output[0]["episode_simdata_list"][0]["ship_info"])
     print("Scenario ENC: ")
     print(output[0]["enc"])
-
+    
 
 if __name__ == "__main__":
     test_simulator()

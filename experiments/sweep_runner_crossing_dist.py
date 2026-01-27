@@ -18,9 +18,52 @@ import re
 import contextlib
 import math
 import copy
+import matplotlib.pyplot as plt
+import pandas as pd
+
+
 
 
 from export_for_evaluator import export_episode_to_evaluator_csv
+
+def extract_scores_from_result(result: dict) -> pd.DataFrame:
+    """
+    Extract per-vessel scores from the sweep_runner result dict.
+
+    Tries common structures:
+    - result["scores"] as dict/list
+    - result["ship_scores"] etc.
+
+    Returns: DataFrame with one row per ship and columns like Ship0_S_safety, etc.
+    """
+    # Common case: you already have a "summary row" dict in your code.
+    # If not, we fall back to scanning keys that look like score names.
+    if isinstance(result, dict):
+        # If result already stores a per-ship dict:
+        for k in ["scores", "ship_scores", "eval_scores", "metrics"]:
+            if k in result and isinstance(result[k], (dict, list)):
+                return pd.DataFrame(result[k]) if isinstance(result[k], list) else pd.DataFrame([result[k]])
+
+        # Otherwise: flatten any keys that look like Ship{n}_S_*, Ship{n}_P_*, Ship{n}_C_*
+        row = {k: v for k, v in result.items() if isinstance(k, str) and (k.startswith("Ship0_") or k.startswith("Ship1_"))}
+        if row:
+            return pd.DataFrame([row])
+
+    # If nothing found:
+    return pd.DataFrame()
+
+
+def write_score_report_from_df(df: pd.DataFrame, path: Path) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        if df.empty:
+            f.write("No scores found.\n")
+            return
+        for _, row in df.iterrows():
+            # print all columns in a readable way
+            f.write("Scores\n")
+            for col in df.columns:
+                f.write(f"  {col:30s}: {row[col]}\n")
+            f.write("\n")
 
 
 def frange(start: float, stop: float, step: float) -> list[float]:
@@ -201,8 +244,19 @@ def run_sim_and_export_csv(
     )
 
     use_colav = True  # sett True når du vil ha COLAV igjen
+    
+
+
 
     simulator = sim.Simulator()
+    print("VIS CFG:",
+      "show_results=", simulator.config.visualizer.show_results,
+      "show_target_tracking_results=", simulator.config.visualizer.show_target_tracking_results,
+      "show_trajectory_tracking_results=", simulator.config.visualizer.show_trajectory_tracking_results,
+      "show_liveplot_colav_results=", simulator.config.visualizer.show_liveplot_colav_results,
+      "save_result_figures=", simulator.config.visualizer.save_result_figures,
+      "matplotlib_backend=", simulator.config.visualizer.matplotlib_backend)
+
     simulator.toggle_liveplot_visibility(liveplot)
 
     if use_colav:
@@ -225,7 +279,7 @@ def run_evaluator_on_csv(
     utm_zone: int,
     new_map_data_load: bool,
     out_json: Path,
-) -> dict[str, float]:
+) -> dict[str, object]:
     from colav_evaluation_tool.evaluator import Evaluator
 
     e = Evaluator()
@@ -237,6 +291,18 @@ def run_evaluator_on_csv(
     )
 
     results = e.evaluate()
+
+    scores_df = extract_scores_from_evaluator(e)
+
+    out_dir = Path("outputs")  # eller case_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    scores_df.to_csv(out_dir / "scores.csv", index=False)
+    scores_long = scores_to_long(scores_df)
+    scores_long.to_csv(out_dir / "scores_long.csv", index=False)
+    write_score_report(scores_df, out_dir / "scores.txt")
+
+
 
     # Extract scores robustly via print output
     scores = extract_scores_via_print(e, vessel_ids=[0, 1])
@@ -267,26 +333,35 @@ def capture_print_vessel_scores(e, vessel_id: int) -> str:
         e.print_vessel_scores(vessel_id=vessel_id)
     return buf.getvalue()
 
-def parse_prettytable_scores(text: str) -> dict[str, float]:
+def parse_prettytable_scores(text: str) -> dict[str, object]:
     """
     Parse the score table printed by e.print_vessel_scores().
-    Expected format resembles a PrettyTable with rows like:
-    | S_14             | 0.63 |
-    Returns {"S_14": 0.63, ...}
-    """
-    scores: dict[str, float] = {}
-    # match: |   key   |   value   |
-    row_re = re.compile(r"\|\s*([A-Za-z0-9_ ]+?)\s*\|\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*\|")
-    for m in row_re.finditer(text):
-        key = m.group(1).strip()
-        val = float(m.group(2))
-        # Skip obvious non-score rows if any
-        if key.lower() in {"ship 0", "ship 1", "situation"}:
-            continue
-        scores[key] = val
-    return scores
 
-def extract_scores_via_print(e, vessel_ids: list[int]) -> dict[str, float]:
+    - Parses numeric rows as floats
+    - Also captures the string row: situation | CRGW / HO / CRSO / ...
+    """
+    out: dict[str, object] = {}
+
+    # 1) Capture situation (string)
+    sit_re = re.compile(r"\|\s*situation\s*\|\s*([A-Za-z0-9_]+)\s*\|", re.IGNORECASE)
+    m = sit_re.search(text)
+    if m:
+        out["situation"] = m.group(1).strip()
+
+    # 2) Capture numeric rows
+    num_re = re.compile(
+        r"\|\s*([A-Za-z0-9_ ]+?)\s*\|\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*\|"
+    )
+    for m in num_re.finditer(text):
+        key = m.group(1).strip()
+        if key.lower() in {"ship 0", "ship 1"}:
+            continue
+        out[key] = float(m.group(2))
+
+    return out
+
+
+def extract_scores_via_print(e, vessel_ids: list[int]) -> dict[str, object]:
     """
     Returns flat dict with keys like Ship0_S_14, Ship1_P_delay, ...
     """
@@ -299,6 +374,63 @@ def extract_scores_via_print(e, vessel_ids: list[int]) -> dict[str, float]:
     return flat
 
 
+def extract_scores_from_evaluator(evaluator):
+    """
+    Returnerer en pandas DataFrame med én rad per skip
+    og kolonner for alle S_, P_, C_-scorer.
+    """
+    rows = []
+
+    for v in evaluator.vessels:
+        row = {
+            "vessel_id": v.id,
+            "mmsi": getattr(v, "mmsi", None),
+            "name": getattr(v, "name", f"Ship{v.id}"),
+        }
+
+        for attr in dir(v):
+            if attr.startswith(("S_", "P_", "C_")):
+                val = getattr(v, attr)
+                # filtrer bort metoder og kallbare
+                if callable(val):
+                    continue
+                # numpy -> float
+                try:
+                    import numpy as np
+                    if isinstance(val, np.ndarray):
+                        val = float(val)
+                except Exception:
+                    pass
+                row[attr] = val
+
+        rows.append(row)
+
+    import pandas as pd
+    return pd.DataFrame(rows)
+
+def scores_to_long(df):
+    records = []
+    for _, row in df.iterrows():
+        for col in df.columns:
+            if col.startswith(("S_", "P_", "C_")):
+                records.append({
+                    "vessel_id": row["vessel_id"],
+                    "mmsi": row["mmsi"],
+                    "metric": col,
+                    "value": row[col],
+                })
+    import pandas as pd
+    return pd.DataFrame(records)
+
+
+def write_score_report(df, path):
+    with open(path, "w") as f:
+        for _, row in df.iterrows():
+            f.write(f"Vessel {row['vessel_id']} (MMSI {row['mmsi']})\n")
+            for col in df.columns:
+                if col.startswith(("S_", "P_", "C_")):
+                    f.write(f"  {col:25s}: {row[col]}\n")
+            f.write("\n")
 
 def main() -> None:
     repo_root = Path(__file__).resolve().parents[1]
@@ -423,9 +555,13 @@ def main() -> None:
         }
         row.update(scores)
         append_summary_row(summary_csv, row)
+        scores_df = extract_scores_from_result(row)
+        scores_df.to_csv(case_dir / "scores.csv", index=False)
+        write_score_report_from_df(scores_df, case_dir / "scores.txt")
 
     print("\n=== DONE ===")
     print("Summary:", summary_csv)
+    plt.show(block=True)
 
 
 if __name__ == "__main__":

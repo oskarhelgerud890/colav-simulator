@@ -5,7 +5,7 @@ out_dir: "experiments/runs"
 
 # Simulator
 show_plots: false
-liveplot: true
+liveplot: false
 new_load_of_map_data_first_case: true
 
 # Evaluator (kan settes false hvis colav_evaluation_tool ikke er installert i samme venv)
@@ -22,8 +22,8 @@ ship1_wp_length_m: 6000.0
 
 sweep:
   ship1_angle_deg:
-    start: 90.0
-    stop: 90.0
+    start: 20.0
+    stop: 30.0
     step: 1.0
 
 

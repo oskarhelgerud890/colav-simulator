@@ -181,8 +181,6 @@ def patch_template_for_case(template: dict, case: Case, cfg: dict) -> dict:
     return cfg_out
 
 
-
-
 def run_sim_and_export_csv(
     scenario_yaml: Path,
     out_csv: Path,
@@ -218,7 +216,7 @@ def run_evaluator_on_csv(
     utm_zone: int,
     new_map_data_load: bool,
     out_json: Path,
-) -> dict[str, float]:
+) -> dict[str, Any]:
     from colav_evaluation_tool.evaluator import Evaluator
 
     e = Evaluator()
@@ -232,7 +230,7 @@ def run_evaluator_on_csv(
     results = e.evaluate()
 
     # Extract scores robustly via print output
-    scores = extract_scores_via_print(e, vessel_ids=[0, 1])
+    scores = extract_scores_via_print(e)
 
     payload = {
         "csv_path": str(csv_path),
@@ -260,36 +258,80 @@ def capture_print_vessel_scores(e, vessel_id: int) -> str:
         e.print_vessel_scores(vessel_id=vessel_id)
     return buf.getvalue()
 
-def parse_prettytable_scores(text: str) -> dict[str, float]:
+def parse_prettytable_scores_flexible(text: str, *, vessel_id: int) -> dict[str, float | str]:
     """
-    Parse the score table printed by e.print_vessel_scores().
-    Expected format resembles a PrettyTable with rows like:
-    | S_14             | 0.63 |
-    Returns {"S_14": 0.63, ...}
-    """
-    scores: dict[str, float] = {}
-    # match: |   key   |   value   |
-    row_re = re.compile(r"\|\s*([A-Za-z0-9_ ]+?)\s*\|\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*\|")
-    for m in row_re.finditer(text):
-        key = m.group(1).strip()
-        val = float(m.group(2))
-        # Skip obvious non-score rows if any
-        if key.lower() in {"ship 0", "ship 1", "situation"}:
-            continue
-        scores[key] = val
-    return scores
+    Robust parser for Evaluator.print_vessel_scores() output.
 
-def extract_scores_via_print(e, vessel_ids: list[int]) -> dict[str, float]:
+    Assumes a 2-column table with a header line like:
+      |   Ship 0   |   Ship 1   |
+    and then rows like:
+      |   r_cpa    |  104.31    |
+
+    We map every parsed row to the ship-id indicated by the *right* header ("Ship 1" above).
     """
-    Returns flat dict with keys like Ship0_S_14, Ship1_P_delay, ...
-    """
-    flat: dict[str, float] = {}
-    for vid in vessel_ids:
-        txt = capture_print_vessel_scores(e, vid)
-        d = parse_prettytable_scores(txt)
-        for k, v in d.items():
-            flat[f"Ship{vid}_{k}"] = v
+    out: dict[str, float | str] = {}
+
+    def parse_val(v: str):
+        v = str(v).strip()
+        if v == "":
+            return ""
+        try:
+            return float(v)
+        except Exception:
+            return v
+
+    lines = text.splitlines()
+
+    # --- find target ship from header line: "| Ship A | Ship B |" -> values belong to Ship B ---
+    target_ship: int | None = None
+    header_re = re.compile(r"^\|\s*.*Ship\s*(\d+)\s*.*\|\s*.*Ship\s*(\d+)\s*.*\|$", re.IGNORECASE)
+
+    for ln in lines:
+        m = header_re.match(ln.strip())
+        if m:
+            target_ship = int(m.group(2))  # RIGHT column ship-id
+            break
+
+    if target_ship is None:
+        # fallback: historically "other ship"
+        target_ship = 1 - int(vessel_id)
+
+    # --- parse 2-col rows line-by-line ---
+    row2 = re.compile(r"^\|\s*(.*?)\s*\|\s*(.*?)\s*\|$")
+
+    for ln in lines:
+        ln = ln.strip()
+        m = row2.match(ln)
+        if not m:
+            continue
+
+        key = m.group(1).strip()
+        val = m.group(2).strip()
+
+        # skip header-ish / meta rows
+        if key.lower() in {"ship 0", "ship 1"}:
+            continue
+        if key.startswith("l ="):
+            continue
+        # skip the ship header row that sometimes matches row2
+        if key.lower().startswith("ship") and val.lower().startswith("ship"):
+            continue
+
+        key = key.replace(" ", "_")
+        out[f"Ship{target_ship}_{key}"] = parse_val(val)
+
+    return out
+
+
+
+
+def extract_scores_via_print(e) -> dict[str, float | str]:
+    flat: dict[str, float | str] = {}
+    for vid in [0, 1]:
+        txt = capture_print_vessel_scores(e, vessel_id=vid)
+        flat.update(parse_prettytable_scores_flexible(txt, vessel_id=vid))
     return flat
+
 
 
 
@@ -380,7 +422,7 @@ def main() -> None:
             (case_dir / "error_sim.txt").write_text(repr(ex))
             print(f"  !! SIM ERROR: {ex}")
 
-        scores: dict[str, float] = {}
+        scores: dict[str, Any] = {}
 
         if run_eval and csv_ok:
             try:

@@ -22,7 +22,7 @@ visualizer:
   show_trajectory_tracking_results: True
   save_result_figures: False
   save_liveplot_animation: False
-  show_results: False
+  show_results: True
   dark_mode_liveplot: True
   update_rate_liveplot: 1.0 # relative to simulation time, not wall
   uniform_seabed_color: False
